@@ -3,10 +3,10 @@
 The data used in all notebooks is as described below:
 
 The detailed county-level housing data has been collected from Zillow. This includes information about property values, rental values, changes in home prices, etc...
-This data can be downloaded individually from this page:
+This data can be downloaded individually from this page:<br>
 https://www.zillow.com/research/data/
 
-There is a very useful lookup table between zip codes, county names, state names, and FIPS codes on Kaggle. This was posted by Dan Ofer and can be found on this page:
+There is a very useful lookup table between zip codes, county names, state names, and FIPS codes on Kaggle. This was posted by Dan Ofer and can be found on this page:<br>
 https://www.kaggle.com/danofer/zipcodes-county-fips-crosswalk
 
 There is a very useful dataset which has been compiled by Mike Johnson Jr on Kaggle. This contains information for counties about the number, and type, of crimes committed in each county across years. This can be found on this page:
