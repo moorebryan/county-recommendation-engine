@@ -1,0 +1,627 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "If not already installed (and running Anaconda) install the following:<br>\n",
+    "conda install plotly<br>\n",
+    "conda install geopandas<br>\n",
+    "conda install pyshp\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Eventually the below will be handeled by an interface, but for now it is manual"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 60,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# User chooses which features to include from the list of all available features\n",
+    "# These features are (Mean Income , Unemployment Rate , Rural-Urban Continuum Code , \n",
+    "# Avg Num Of Sales , crime_rate_per_100000 , Avg Listing Price , Avg Listing Per Sqr Ft\n",
+    "# included_features = ['crime_rate_per_100000','Avg Listing Price','Mean Income','Rural-Urban Continuum Code',\n",
+    "#                     'Unemployment Rate']\n",
+    "included_features = ['Avg Listing Price','Rural-Urban Continuum Code','Unemployment Rate','Mean Income']\n",
+    "\n",
+    "# For these selected features the user selects the optimal values they prefer\n",
+    "# Eventually this will be through a drop-down menu, but for now it is a lsit entered in the same order as the\n",
+    "# provided features above\n",
+    "# feature_values_desired = [1000,150000,70000,3,1]\n",
+    "feature_values_desired = [150000,6,5,95000]\n",
+    "\n",
+    "# If desired you can choose to only select a subset of the country (by region)\n",
+    "# Region names are Northeast, Southeast, Midwest, Southwest, and West\n",
+    "region_select = [] # Brackets around selection\n",
+    "\n",
+    "# Users also have the option to limit their selection to a single state, or search the entire country\n",
+    "# This will be done through an interface, but here it is using a single list\n",
+    "# If this list is empty it will select entire country, otherwise enter name as string in the list\n",
+    "# Note Rural-Urban Continuum Code goes from 1-9, with 1 being bustling city\n",
+    "state_select = ['California']\n",
+    "\n",
+    "# Below is the number of counties to display\n",
+    "num_counties = 0\n",
+    "\n",
+    "# Select order to use for calculating Minkowski distance between counties\n",
+    "p=2\n",
+    "\n",
+    "# Where processed files are saved to\n",
+    "processed_data_folder = '/Users/bryan/Movies/Data For TDI Project/Processed_Data_County_Level'\n",
+    "county_file_name = 'for_county_recommendations.csv'"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Import All Modules"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 61,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import os.path\n",
+    "from scipy.spatial.distance import minkowski\n",
+    "import numpy as np\n",
+    "from sklearn.preprocessing import MinMaxScaler\n",
+    "\n",
+    "import plotly\n",
+    "plotly.tools.set_credentials_file(username='bmoore49', api_key='xnI7D5RMqkWnQzD76tDx')\n",
+    "import plotly.plotly as py\n",
+    "import plotly.figure_factory as ff\n",
+    "\n",
+    "# The below suppresses all warnings in the notebook\n",
+    "# Only leave this uncommented for display purposes\n",
+    "import warnings\n",
+    "warnings.filterwarnings(\"ignore\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 62,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# During EDA it was noted that there is an extremely strong correlation\n",
+    "# between Avg Listing Price and Avg Listing Per Sqr Ft\n",
+    "# To prevent this from causing signficant problems during the search below we will manually prevent the user from\n",
+    "# having selecting both\n",
+    "# For the final version this can be done directly through the interface, but here is is a check after the fact\n",
+    "\n",
+    "if ('Avg Listing Price' in included_features) & ('Avg Listing Per Sqr Ft' in included_features):\n",
+    "    print('You must remove either Avg Listing Price or Avg Listing Per Sqr Ft from your selection')\n",
+    "    print('Both are not allowed as they will degrade your predictions')\n",
+    "    raise KeyboardInterrupt"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now load the data into memory"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 63,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>index</th>\n",
+       "      <th>Mean Income</th>\n",
+       "      <th>Unemployment Rate</th>\n",
+       "      <th>Rural-Urban Continuum Code</th>\n",
+       "      <th>Avg Num Of Sales</th>\n",
+       "      <th>crime_rate_per_100000</th>\n",
+       "      <th>Avg Listing Price</th>\n",
+       "      <th>Avg Listing Per Sqr Ft</th>\n",
+       "      <th>FIPS</th>\n",
+       "      <th>StateName</th>\n",
+       "      <th>CountyName</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1.0</td>\n",
+       "      <td>58343.0</td>\n",
+       "      <td>3.9</td>\n",
+       "      <td>2.0</td>\n",
+       "      <td>263.700000</td>\n",
+       "      <td>251.601926</td>\n",
+       "      <td>200641.125000</td>\n",
+       "      <td>101.445131</td>\n",
+       "      <td>1001</td>\n",
+       "      <td>Alabama</td>\n",
+       "      <td>Autauga</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>2.0</td>\n",
+       "      <td>56607.0</td>\n",
+       "      <td>4.0</td>\n",
+       "      <td>3.0</td>\n",
+       "      <td>458.500000</td>\n",
+       "      <td>228.086325</td>\n",
+       "      <td>306246.250000</td>\n",
+       "      <td>147.828333</td>\n",
+       "      <td>1003</td>\n",
+       "      <td>Alabama</td>\n",
+       "      <td>Baldwin</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>3.0</td>\n",
+       "      <td>32490.0</td>\n",
+       "      <td>5.9</td>\n",
+       "      <td>6.0</td>\n",
+       "      <td>6.461364</td>\n",
+       "      <td>177.278771</td>\n",
+       "      <td>163670.833333</td>\n",
+       "      <td>88.227731</td>\n",
+       "      <td>1005</td>\n",
+       "      <td>Alabama</td>\n",
+       "      <td>Barbour</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>4.0</td>\n",
+       "      <td>45795.0</td>\n",
+       "      <td>4.4</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>4.666667</td>\n",
+       "      <td>217.661692</td>\n",
+       "      <td>144979.083333</td>\n",
+       "      <td>87.040312</td>\n",
+       "      <td>1007</td>\n",
+       "      <td>Alabama</td>\n",
+       "      <td>Bibb</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>5.0</td>\n",
+       "      <td>48253.0</td>\n",
+       "      <td>4.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>51.545455</td>\n",
+       "      <td>210.810064</td>\n",
+       "      <td>175120.833333</td>\n",
+       "      <td>110.452846</td>\n",
+       "      <td>1009</td>\n",
+       "      <td>Alabama</td>\n",
+       "      <td>Blount</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   index  Mean Income  Unemployment Rate  Rural-Urban Continuum Code  \\\n",
+       "0    1.0      58343.0                3.9                         2.0   \n",
+       "1    2.0      56607.0                4.0                         3.0   \n",
+       "2    3.0      32490.0                5.9                         6.0   \n",
+       "3    4.0      45795.0                4.4                         1.0   \n",
+       "4    5.0      48253.0                4.0                         1.0   \n",
+       "\n",
+       "   Avg Num Of Sales  crime_rate_per_100000  Avg Listing Price  \\\n",
+       "0        263.700000             251.601926      200641.125000   \n",
+       "1        458.500000             228.086325      306246.250000   \n",
+       "2          6.461364             177.278771      163670.833333   \n",
+       "3          4.666667             217.661692      144979.083333   \n",
+       "4         51.545455             210.810064      175120.833333   \n",
+       "\n",
+       "   Avg Listing Per Sqr Ft  FIPS StateName CountyName  \n",
+       "0              101.445131  1001   Alabama    Autauga  \n",
+       "1              147.828333  1003   Alabama    Baldwin  \n",
+       "2               88.227731  1005   Alabama    Barbour  \n",
+       "3               87.040312  1007   Alabama       Bibb  \n",
+       "4              110.452846  1009   Alabama     Blount  "
+      ]
+     },
+     "execution_count": 63,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Load dataframe with data for recommendations into memory\n",
+    "for_county_recommendations_df = pd.read_csv(os.path.join(processed_data_folder,county_file_name))\n",
+    "# Drop unnecessary column (artificat from being read in)\n",
+    "for_county_recommendations_df.drop(columns=['Unnamed: 0'], inplace=True)\n",
+    "\n",
+    "for_county_recommendations_df.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 64,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Run this only if region_select has been filled out and no list of specific states created\n",
+    "if (not(len(region_select))==0 and len(state_select)==0):\n",
+    "    \n",
+    "    if region_select==['Northeast']:\n",
+    "        state_select=['Maine','Massachusetts','Rhode Island','Connecticut','New Hampshire','Vermont','New York',\n",
+    "                      'Pennsylvania','New Jersey','Delaware','Maryland']\n",
+    "    if region_select==['Southeast']:\n",
+    "        state_select=['West Virginia','Virginia','Kentucky','Tennessee','North Carolina','South Carolina',\n",
+    "                      'Georgia','Alabama','Mississippi','Arkansas','Louisiana','Florida']\n",
+    "    if region_select==['Midwest']:\n",
+    "        state_select=['Ohio','Indiana','Michigan','Illinois','Missouri','Wisconsin','Minnesota','Iowa','Kansas',\n",
+    "                      'Nebraska','South Dakota','North Dakota']\n",
+    "    if region_select==['Southwest']:\n",
+    "        state_select=['Texas','Oklahoma','New Mexico','Arizona']\n",
+    "    if region_select==['West']:\n",
+    "        state_select=['Colorado','Wyoming','Montana','Idaho','Washington','Oregon','Utah','Nevada','California',\n",
+    "                      'Alaska','Hawaii']\n",
+    "        \n",
+    "        "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 65,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Make sure all provided states are in the dataframe\n",
+    "# Once this is done through an interface this will not be a problem, but for now we check manually\n",
+    "\n",
+    "# First get list of all unique state names in the dataframe\n",
+    "states_in_df = for_county_recommendations_df.StateName.unique()\n",
+    "\n",
+    "for item in state_select: # Go through each requested state and make sure it is in the list\n",
+    "    if not (item in states_in_df): # If not in list alert user\n",
+    "        print('The selected state (%s) is not in the dataframe' %item)\n",
+    "        print('Replace this selection with a valid name from the list states_in_df')\n",
+    "        raise KeyboardInterrupt"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now modify this dataframe if the user selected to limit it to only chosen states"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 66,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "There are 58 counties in database\n"
+     ]
+    }
+   ],
+   "source": [
+    "# The above is run only if the list for selecting a state is not empty\n",
+    "if not (len(state_select)==0):\n",
+    "    # Only include entries corresponding to States provided by users\n",
+    "    for_county_recommendations_df = for_county_recommendations_df[for_county_recommendations_df.StateName.isin(state_select)]\n",
+    "    \n",
+    "# Now check how many counties are in list available for selection    \n",
+    "print('There are %i counties in database' %for_county_recommendations_df.shape[0])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 67,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# If user selected 0 counties change this to include all counties in new database\n",
+    "if num_counties==0:\n",
+    "    num_counties = for_county_recommendations_df.shape[0]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We now restrict this dataframe to only hold the selected features for this comparison"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 68,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# First, make separate dataframe with FIPS, StateName, and CountyName information\n",
+    "# This is not needed for finding most similar columns, but will be needed for displaying human-readable\n",
+    "# information to the user\n",
+    "county_info_df = for_county_recommendations_df[['FIPS','StateName','CountyName']]\n",
+    "\n",
+    "# Now choose to only keep those features indicated above\n",
+    "feature_df = for_county_recommendations_df[included_features]\n",
+    "feature_titles = list(feature_df.columns.values)\n",
+    "feature_array = feature_df.values"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We now calculate the minkowski distance between our provided row and each row in the dataframe and see which rows are the closest matches for the indicated features<br>\n",
+    "Note that the order of features will have been re-ordered to be in the same order as the supplied values above"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 69,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# First calculate all distances between our supplied vector and every vector in our list\n",
+    "# Out of this we get a tuple for each calculation. First value in Tuple Holds calculated distance and second\n",
+    "# holds its corresponding index\n",
+    "all_dist = [(minkowski(feature_values_desired,feature_array[row,:],p),row) for row in range(feature_array.shape[0])]\n",
+    "\n",
+    "# This orders the closest distances so they are at the front of the list\n",
+    "# Each entry is a tuple. The first item holds the distance and the second the corresponding index\n",
+    "sorted_counties = sorted(all_dist, key=lambda x: x[0])\n",
+    "\n",
+    "# Now select to only keep the desired number of most similar counties\n",
+    "sorted_counties = sorted_counties[:num_counties]\n",
+    "# Get list of corresponding indices\n",
+    "distance_metric = [int(tuples[0]) for tuples in sorted_counties]\n",
+    "sorted_counties_indices = [int(tuples[1]) for tuples in sorted_counties]\n",
+    "\n",
+    "# Now find list of associated FIPS numbers\n",
+    "FIPS_vec = county_info_df.FIPS.values\n",
+    "# Get list of FIPS values corresponding to found indices\n",
+    "FIPS_values = FIPS_vec[sorted_counties_indices]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 70,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Now adjust this distance metric into a closeness score, where closer is a larger number by inverting the\n",
+    "# above-calculated distance score\n",
+    "# closeness_score = [float(1)/float(dist) for dist in distance_metric]\n",
+    "# Now scale these values so max value is 1\n",
+    "# closeness_score = [float(score)/max(closeness_score) for score in closeness_score]\n",
+    "\n",
+    "# Now scale these values so max value is 1\n",
+    "# distance_score = distance_metric\n",
+    "distance_score = [float(score)/max(distance_metric) for score in distance_metric]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "We will now correlate these counties with the associated information for human readability<br>\n",
+    "Below we output this as a pandas dataframe with the county and state names, along with the above-calculated score"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 71,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "   index  FIPS  Closeness Score   StateName CountyName\n",
+      "0      0  6049         0.044488  California      Modoc\n",
+      "1      1  6025         0.078608  California   Imperial\n",
+      "2      2  6003         0.084782  California     Alpine\n",
+      "3      3  6093         0.086420  California   Siskiyou\n",
+      "4      4  6035         0.088950  California     Lassen\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Create new dataframe with this information\n",
+    "recommended_counties_df = pd.DataFrame()\n",
+    "\n",
+    "# Add in corresponding FIPS Values\n",
+    "recommended_counties_df['FIPS'] = FIPS_values\n",
+    "# Now add in the scores correlated with these FIPS values\n",
+    "recommended_counties_df['Closeness Score'] = distance_score\n",
+    "# Now insert corresponding information about which county and state this corresponds to\n",
+    "recommended_counties_df = pd.merge(recommended_counties_df,for_county_recommendations_df[['FIPS','StateName','CountyName']],how='outer',on='FIPS')\n",
+    "# Now drop all rows which recommendations were not made for\n",
+    "recommended_counties_df.dropna(inplace=True)\n",
+    "recommended_counties_df.reset_index(inplace=True)\n",
+    "\n",
+    "print(recommended_counties_df.head())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 72,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAX4AAABECAYAAACGTF6DAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEgAACxIB0t1+/AAAADl0RVh0U29mdHdhcmUAbWF0cGxvdGxpYiB2ZXJzaW9uIDMuMC4zLCBodHRwOi8vbWF0cGxvdGxpYi5vcmcvnQurowAAAhpJREFUeJzt1jFy2zAURdEPTBaTbCPef50qWyFSUKQJkzRT2cU7p/GQgr4gSHOtNsYoAHL0794AAF9L+AHCCD9AGOEHCCP8AGGEHyCM8AOEEX6AMMIPEEb4AcL8+O4N3Pnz89dYqlVV1Witlmo12nq9tFaj2vr3dW+/fv0v2x47zvh4vc1cWp9nnGa2m5n9vLd95vuM+brfztxf9/R++76X65nzvrfnbq/1dIbzzPNZTGd4fM4+s08zr87i/H77w8x2mnna2+3ncvVZ94fP5Wpmv36N9Va1GtXbqFbLet1GtTaq13i/rvXeun55rZ8f721e8/mMUb0t0/W2fr633M/Y1y8PM0b1D+/tuPde1/s+vs72/o5rHmfcnNHtjNP6+3M+ns98plfr5/OZZuxnujzM2K6X6Zz/+/txWv/596O3UW+//76+off84gcII/wAYYQfIIzwA4QRfoAwwg8QRvgBwgg/QBjhBwgj/ABhhB8gjPADhBF+gDDCDxBG+AHCCD9AGOEHCCP8AGGEHyCM8AOEEX6AMMIPEEb4AcIIP0AY4QcII/wAYYQfIIzwA4QRfoAwwg8QRvgBwgg/QJg2xvjuPQDwhfziBwgj/ABhhB8gjPADhBF+gDDCDxBG+AHCCD9AGOEHCCP8AGGEHyCM8AOEEX6AMMIPEEb4AcIIP0AY4QcII/wAYYQfIIzwA4QRfoAwwg8QRvgBwvwDDr8IkjANRQ0AAAAASUVORK5CYII=\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# Here we create a custom colormap to use for plot\n",
+    "\n",
+    "import matplotlib. pyplot as plt\n",
+    "from matplotlib import colors\n",
+    "from matplotlib.colors import LinearSegmentedColormap\n",
+    "%matplotlib inline\n",
+    "\n",
+    "def display_cmap(cmap): #Display  a colormap cmap\n",
+    "    plt.imshow(np.linspace(0, 100, 256)[None, :],  aspect=25, interpolation='nearest', cmap=cmap) \n",
+    "    plt.axis('off')\n",
+    "    \n",
+    "def colormap_to_colorscale(cmap,num_steps):\n",
+    "    #function that transforms a matplotlib colormap to a Plotly colorscale\n",
+    "    step_size = 1/num_steps\n",
+    "    return [ [k*step_size, colors.rgb2hex(cmap(k*step_size))] for k in range(num_steps+1)]\n",
+    "\n",
+    "def colorscale_from_list(alist, name,num_steps): \n",
+    "    # Defines a colormap, and the corresponding Plotly colorscale from the list alist\n",
+    "    # alist=the list of basic colors\n",
+    "    # name is the name of the corresponding matplotlib colormap\n",
+    "    \n",
+    "    cmap = LinearSegmentedColormap.from_list(name, alist)\n",
+    "    display_cmap(cmap)\n",
+    "    colorscale=colormap_to_colorscale(cmap,num_steps)\n",
+    "    return cmap, colorscale\n",
+    "\n",
+    "## Below is the codes for common colors\n",
+    "muted_blue = '#1f77b4'\n",
+    "safety_orange = '#ff7f0e'\n",
+    "cooked_asparagus_green = '#2ca02c'\n",
+    "brick_red = '#d62728'\n",
+    "muted_purple = '#9467bd'\n",
+    "chestnut_brown = '#8c564b'\n",
+    "rasberry_yogurt_pink = '#e377c2'\n",
+    "middle_gray = '#7f7f7f'\n",
+    "curry_yellow_green = '#bcbd22'\n",
+    "blue_teal = '#17becf'\n",
+    "\n",
+    "input_colors = [brick_red,muted_blue,curry_yellow_green]\n",
+    "# input_colors = ['#32924c',  '#d7df84', '#91511e'] # Green to Yellow to Brown\n",
+    "# input_colors = ['#df0101', '#f5f6ce','#31b404'] # Red to Yellow to Green\n",
+    "# input_colors = ['#df0101', '#f5f6ce'] # Red to Yellow\n",
+    "# input_colors = ['#df0101',\"#08306b\"] # Red to Blue\n",
+    "# input_colors = ['#9467bd','#bcbd22'] # Purple to Yellow/Green\n",
+    "num_bins = 20\n",
+    "elev_cmap, elev_cs = colorscale_from_list(input_colors, 'elev_cmap',num_bins)\n",
+    "colorscale = [item[1] for item in elev_cs]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 74,
+   "metadata": {
+    "scrolled": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<iframe id=\"igraph\" scrolling=\"no\" style=\"border:none;\" seamless=\"seamless\" src=\"https://plot.ly/~bmoore49/6.embed\" height=\"450px\" width=\"900px\"></iframe>"
+      ],
+      "text/plain": [
+       "<plotly.tools.PlotlyDisplay object>"
+      ]
+     },
+     "execution_count": 74,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# colorscale = [\"#f7fbff\", \"#ebf3fb\", \"#deebf7\", \"#d2e3f3\", \"#c6dbef\", \"#b3d2e9\", \"#9ecae1\",\n",
+    "#     \"#85bcdb\", \"#6baed6\", \"#57a0ce\", \"#4292c6\", \"#3082be\", \"#2171b5\", \"#1361a9\",\n",
+    "#     \"#08519c\", \"#0b4083\", \"#08306b\"]\n",
+    "\n",
+    "# Anything above the below percentage will be shown as same (helps show greater detail of other counties)\n",
+    "max_val_percentage = 0.60 # For New York\n",
+    "# max_val_percentage = 0.30 # For Michigan\n",
+    "\n",
+    "fips = FIPS_values\n",
+    "values = distance_score\n",
+    "endpts = list(np.linspace(min(values), max(values)*max_val_percentage, num_bins - 1))\n",
+    "\n",
+    "# If user only wants to see results in a single state display only that state\n",
+    "if len(state_select)==1:\n",
+    "    disp_scope = state_select\n",
+    "else:\n",
+    "    disp_scope = ['usa']\n",
+    "\n",
+    "fig = ff.create_choropleth(\n",
+    "    county_outline={'color': 'rgb(15, 15, 55)', 'width': 0.5},\n",
+    "    state_outline={'width': 1},\n",
+    "    fips = fips, values = values, scope = disp_scope,\n",
+    "    binning_endpoints = endpts,\n",
+    "    colorscale=colorscale,\n",
+    "#     binning_endpoints = endpts, colorscale = colorscale,\n",
+    "    show_state_data = True,\n",
+    "    show_hover = True, centroid_marker = {\n",
+    "        'opacity': 0\n",
+    "    },\n",
+    "    asp = 2.9,\n",
+    "    title = 'Map of Recommended Counties (Lower Score Means Better Match)',\n",
+    "    legend_title = 'Distance Score'\n",
+    ")\n",
+    "py.iplot(fig, filename = 'County Recommendation Plot')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.6.8"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
