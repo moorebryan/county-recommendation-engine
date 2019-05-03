@@ -1,7 +1,6 @@
 # county-recommendation-engine
 
-The data used in all notebooks is as described below:
-
+<bold>Description of Data Used in Project<bold>
 The detailed county-level housing data has been collected from Zillow. This includes information about property values, rental values, changes in home prices, etc...
 This data can be downloaded individually from this page:<br>
 https://www.zillow.com/research/data/
