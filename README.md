@@ -21,7 +21,7 @@ Uber has released information on the average ride lengths for 7 cities in the Un
 https://movement.uber.com/cities?lang=en-US
 
 # Order to Run Notebooks
-Eventually these will be combined into a streamlined app, but for now, to understand how they will go together, please follow the following order.
+Eventually these will be combined into a streamlined app, but for now (to understand how they build on each other) please follow these in the following order.
 1. Run 'Munging at County Level.ipyng'
 2. Run 'Pre-Processing County DF.ipynb'
 3. Run 'Pre_Process_Traffic_Data.ipynb'
