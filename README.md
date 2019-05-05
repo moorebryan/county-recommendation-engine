@@ -19,3 +19,12 @@ https://www.ers.usda.gov/data-products/county-level-data-sets/download-data/
 
 Uber has released information on the average ride lengths for 7 cities in the United States. While my project does not specifically focus on ride-sharing or public transport, there is something very important which can be gleaned from this. Here I use this data with the assumption that the average length of time in takes to get from somewhere inside a county to somewhere inside a county you want to go is similar whether you are taking Uber or driving your own car. I know this is not entirely correct, and carries significant bias, but we can still glean very important information for this. I hope that eventually, through partnerships with other companies, I can expand this information to cover the entire country. I grabbed information for hours of the day mean travel times on weekdays and weekends. These datasets can be navigated to from this page:<br>
 https://movement.uber.com/cities?lang=en-US
+
+# Order to Run Notebooks
+Eventually these will be combined into a streamlined app, but for now, to understand how they will go together, please follow the following order.
+1. Run 'Munging at County Level.ipyng'
+2. Run 'Pre-Processing County DF.ipynb'
+3. Run 'Pre_Process_Traffic_Data.ipynb'
+4. Run 'Incorporate Traffic Information.ipynb'
+5. Run 'county-recommendation-engine.ipynb'
+6. Run 'Time_Series_Prediction.ipynb'
